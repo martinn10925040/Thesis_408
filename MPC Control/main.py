@@ -288,7 +288,7 @@ if __name__ == "__main__":
     os.system("cls")
     
     # Simulation parameters
-    ideal_landing_time = 7
+    ideal_landing_time = 10
     total_sim_time = ideal_landing_time + 1
     sample_time = 0.1
     num_steps = int(total_sim_time / sample_time)
