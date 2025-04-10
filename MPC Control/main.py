@@ -4,11 +4,14 @@ from scipy.signal import cont2discrete
 import do_mpc
 import matplotlib.pyplot as plt
 import casadi as ca
+import time
 
 # ------------------------------------------
 # 1. Define the continuous-time state-space model
 # ------------------------------------------
 def create_continuous_state_space(gravity, inertiaX, inertiaY, inertiaZ, mass):
+    os.system("cls")
+    print("Processing Continuous State Space")
     A_cont = np.array([
         [0,   0,   0,   1,   0,   0,    0,   0,   0,   0,   0,   0],
         [0,   0,   0,   0,   1,   0,    0,   0,   0,   0,   0,   0],
@@ -48,6 +51,8 @@ def create_continuous_state_space(gravity, inertiaX, inertiaY, inertiaZ, mass):
 # 2. Discretize the system
 # ------------------------------------------
 def create_discrete_space(A_cont, B_cont, sample_time):
+    os.system("cls")
+    print("Processing Discrete State Space")
     sysd = cont2discrete((A_cont, B_cont, np.eye(A_cont.shape[0]), np.zeros((A_cont.shape[0], B_cont.shape[1]))), sample_time)
     A_disc, B_disc = sysd[0], sysd[1]
     return A_disc, B_disc
@@ -56,6 +61,8 @@ def create_discrete_space(A_cont, B_cont, sample_time):
 # 3. Create a reference trajectory (port of CreateReferencePath)
 # ------------------------------------------
 def create_reference_path(time_vector, num_steps, x_offset, y_offset, initial_altitude, ideal_landing_time, final_altitude, plot=True):
+    os.system("cls")
+    print("Creating Reference Trajectory")
     half_landing = ideal_landing_time / 2
     final_descent_rate = 0.8  # m/s
     final_segment_height = 1.5  # m
@@ -147,6 +154,8 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
     import os
     import numpy as np
 
+    os.system("cls")
+    print("Defining MPC Controller")
     n_states = A_disc.shape[0]
     n_inputs = B_disc.shape[1]
 
@@ -154,7 +163,7 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
     model_type = 'discrete'
     model = do_mpc.model.Model(model_type)
     os.system("cls")
-    
+
     # Define state and control variables
     x = model.set_variable(var_type='_x', var_name='x', shape=(n_states, 1))
     u = model.set_variable(var_type='_u', var_name='u', shape=(n_inputs, 1))
@@ -192,7 +201,9 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
         # Loop over the horizon and fill the template.
         for k in range(H):
             t_pred = t_now + k * sample_time
-            idx = int(t_pred / sample_time)
+            # Compute idx explicitly extracting scalar value.
+            idx = int(np.array(t_pred / sample_time).item())
+            # Clamp idx to the last valid index if it's out of bounds.
             if idx >= ref_traj.shape[1]:
                 idx = ref_traj.shape[1] - 1
             
@@ -207,10 +218,11 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
             
             # Populate the TVP template with the combined values.
             tvp_template['_tvp', k] = ca.vertcat(ref_vec, alt_value)
-        
+
         return tvp_template
 
 
+    
     mpc.set_tvp_fun(tvp_fun)
     
     # Define the stage cost to track the reference 'r'
@@ -218,12 +230,14 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
     R = weights.get('R', np.eye(n_inputs))
     mterm = ca.SX.zeros(1, 1)
     lterm = ca.SX.zeros(1, 1)
+    mpc.set_rterm(u=1)
     for i in range(n_states):
         lterm += Q[i, i] * (x[i] - r[i])**2
     for j in range(n_inputs):
         lterm += R[j, j] * (u[j])**2
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
+    mpc.settings.supress_ipopt_output()
     os.system("cls")
     
     # Set bounds for inputs and states (as before)
@@ -244,22 +258,18 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
 
 
 
-
-
-
-
-
-
-
-
 # ------------------------------------------
 # 5. Simulation loop
 # ------------------------------------------
 def flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref_traj, mpc, model):
+    import time
+    start_time = time.perf_counter()
     state_history = np.zeros((12, num_steps))
     input_history = np.zeros((4, num_steps))
+    LandTime = 0
     current_state = initial_state.copy()
-    
+    os.system("cls")
+    print("Running Flight Simulation")
     for k in range(num_steps):
         mpc.x0 = current_state
         
@@ -267,16 +277,102 @@ def flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref
         # since mpc.set_tvp_fun(tvp_fun) takes care of updating the reference
         
         u0 = mpc.make_step(current_state)
-        os.system("cls")
-        print('#####################################################################################################' + str(k))
+        # os.system("cls")
+        # print('#####################################################################################################' + str(k))
         
         current_state = A_disc @ current_state + B_disc @ u0.reshape(-1, 1)
         if current_state[8, 0] < 0.01:
             current_state[8, 0] = 0
         state_history[:, k] = current_state.flatten()
         input_history[:, k] = u0.flatten()
-    
-    return state_history, input_history
+
+        if (current_state[8,0] == 0) & (LandTime == 0) :
+            LandTime = k
+
+
+    end_time = time.perf_counter()
+    RunTime = end_time - start_time
+    return state_history, input_history, LandTime, RunTime
+
+
+
+
+
+def animate_simulation(state_history, time_vector):
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation
+    import matplotlib.patches as patches
+    import numpy as np
+
+    # Assume state_history is 12 x num_steps and:
+    # state_history[6, :] = x position
+    # state_history[8, :] = altitude (z position)
+    # state_history[1, :] = pitch angle (in radians)
+
+    # Define the plot limits based on your data
+    min_x = state_history[6, :].min() - 1
+    max_x = state_history[6, :].max() + 1
+    min_alt = -1
+    max_alt = state_history[8, :].max() + 1
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_alt, max_alt)
+    ax.set_xlabel("X Position (m)")
+    ax.set_ylabel("Altitude (m)")
+    ax.set_title("UAV Landing Animation with Pitch Dynamics")
+
+    # Draw a ground line at altitude 0
+    ground_line = ax.axhline(y=0, color='brown', linestyle='--', linewidth=2, label='Ground')
+
+    # Define a rectangular patch to represent the UAV.
+    # We'll choose arbitrary dimensions for width and height.
+    width = 1.0   # UAV length (horizontal dimension)
+    height = 0.3  # UAV thickness (vertical dimension)
+
+    # Assume the UAV's pitch angle is in row 1 of state_history.
+    # Get the initial values:
+    initial_x = state_history[6, 0]
+    initial_alt = state_history[8, 0]
+    initial_pitch = state_history[2, 0]  # pitch (radians)
+    initial_pitch_deg = np.degrees(initial_pitch)
+
+    # Since Rectangle by default places the box using its lower-left corner,
+    # we calculate that given a center at (initial_x, initial_alt).
+    init_lower_left = (initial_x - width/2, initial_alt - height/2)
+
+    # Create the patch.
+    uav_patch = patches.Rectangle(init_lower_left, width, height,
+                                angle=initial_pitch_deg, color='red',
+                                ec='black', zorder=5)
+    ax.add_patch(uav_patch)
+
+    # Optionally, add a legend.
+    ax.legend()
+
+    def animate(i):
+        # For frame i, extract the UAV's current x, altitude, and pitch angle
+        x_val = state_history[6, i]
+        alt_val = state_history[8, i]
+        pitch_val = state_history[2, i]  # pitch in radians
+        pitch_deg = np.degrees(pitch_val)
+        
+        # Update the UAV patch position so that its center is at (x_val, alt_val)
+        new_lower_left = (x_val - width/2, alt_val - height/2)
+        uav_patch.set_xy(new_lower_left)
+        # Update its rotation (angle is in degrees)
+        uav_patch.angle = pitch_deg
+        
+        return (uav_patch,)
+
+    # Create the animation
+    anim = FuncAnimation(fig, animate, frames=state_history.shape[1],
+                        interval=100, blit=True)
+
+    plt.show()  
+
+
+
 
 
 
@@ -284,12 +380,12 @@ def flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref
 # 6. Main script: define parameters, build models, and run simulation
 # ------------------------------------------
 if __name__ == "__main__":
-    
+    start = time.perf_counter()
     os.system("cls")
     
     # Simulation parameters
-    ideal_landing_time = 10
-    total_sim_time = ideal_landing_time + 1
+    ideal_landing_time = 7
+    total_sim_time = ideal_landing_time + 2
     sample_time = 0.1
     num_steps = int(total_sim_time / sample_time)
     time_vector = np.linspace(0, total_sim_time, num_steps)
@@ -298,7 +394,7 @@ if __name__ == "__main__":
 
     x_offset = 2.0
     y_offset = 2.0
-    initial_altitude = 5.0
+    initial_altitude = 11.0
     final_altitude = 0.0
     gravity = 9.81
     
@@ -313,11 +409,11 @@ if __name__ == "__main__":
     A_disc, B_disc = create_discrete_space(A_cont, B_cont, sample_time)
     
     # Generate reference trajectory
-    ref_traj = create_reference_path(time_vector, num_steps, x_offset, y_offset, initial_altitude, ideal_landing_time-0.425, final_altitude)
+    ref_traj = create_reference_path(time_vector, num_steps, x_offset, y_offset, initial_altitude, ideal_landing_time, final_altitude)
     
     # Define weights (adjust these to match your performance criteria)
     weights = {
-        'Q': np.diag([0.1, 0.1, 100, 1, 1, 10, 500, 500, 1000, 1200, 900, 600]),
+        'Q': np.diag([0.1, 0.1, 100, 1, 1, 10, 2500, 2500, 10000, 900, 900, 100]),
         'R': np.diag([5, 5, 5, 5])  # Example: you might tune these as needed
     }
     
@@ -326,7 +422,7 @@ if __name__ == "__main__":
     input_bounds = [
         (-mass * gravity, 2.5 * mass * gravity),  # thrust (deltaT)
         (-6.535, 6.535),                          # roll torque
-        (-6.535, 6.535),                          # pitch torque77777777777777
+        (-6.535, 6.535),                          # pitch torque
         (-0.36, 0.36)                             # yaw torque
     ]
     
@@ -341,7 +437,7 @@ if __name__ == "__main__":
     state_bounds[11] = (-2, 0)          # vertical velocity
     
     # Create MPC controller with chosen horizon
-    horizon = 40
+    horizon = 15
     mpc, model = create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_bounds, state_bounds, ref_traj)
 
     # Set initial state (12x1 vector)
@@ -350,9 +446,21 @@ if __name__ == "__main__":
     initial_state[7] = y_offset       # initial y
     initial_state[8] = initial_altitude  # initial altitude
     
+    endTime = time.perf_counter()
+    SetupTime = endTime-start
+
     # Run simulation
-    state_history, input_history = flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref_traj, mpc, model)
+    state_history, input_history, LandTime, RunTime = flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref_traj, mpc, model)
     
+    os.system("cls")
+
+    print("Landing Time: " + str(LandTime/10) + " seconds")
+    print(f"Landing Velocity: {state_history[11,LandTime]:.2f} m/s")
+    print(f"X-Position: {state_history[6,LandTime]:.2f} m")
+    print(f"Y-Position: {state_history[7,LandTime]:.2f} m")
+    print(f"Setup Run Time: {SetupTime:.2f} s")
+    print(f"MPC Run Time: {RunTime:.2f} s")
+
     # Plot some results (positions and altitude)
     plt.figure(figsize=(10,6))
     plt.plot(time_vector, state_history[6, :], label='X Position')
@@ -360,7 +468,20 @@ if __name__ == "__main__":
     plt.plot(time_vector, state_history[8, :], label='Altitude')
     plt.xlabel("Time (s)")
     plt.ylabel("Distance (m)")
-    plt.title("UAV Flight Simulation - Target: 5 seconds")
+    plt.title(f"UAV Flight Simulation - Target: {ideal_landing_time} seconds")
     plt.legend()
     plt.grid(True)
     plt.show()
+
+        # Plot some results (positions and altitude)
+    plt.figure(figsize=(10,6))
+    plt.plot(time_vector, state_history[11, :], label='Vertical Velocity')
+    plt.xlabel("Time (s)")
+    plt.ylabel("Velocity (m/s)")
+    plt.title(f"UAV Flight Simulation - Target: {ideal_landing_time} seconds")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    
+    animate_simulation(state_history, time_vector)
+
