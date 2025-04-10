@@ -346,7 +346,7 @@ def animate_simulation(state_history, time_vector):
                                 angle=initial_pitch_deg, color='red',
                                 ec='black', zorder=5)
     ax.add_patch(uav_patch)
-
+    
     # Optionally, add a legend.
     ax.legend()
 
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     os.system("cls")
     
     # Simulation parameters
-    ideal_landing_time = 7
+    ideal_landing_time = 12
     total_sim_time = ideal_landing_time + 2
     sample_time = 0.1
     num_steps = int(total_sim_time / sample_time)
@@ -394,7 +394,7 @@ if __name__ == "__main__":
 
     x_offset = 2.0
     y_offset = 2.0
-    initial_altitude = 11.0
+    initial_altitude = 12.0
     final_altitude = 0.0
     gravity = 9.81
     
@@ -413,8 +413,8 @@ if __name__ == "__main__":
     
     # Define weights (adjust these to match your performance criteria)
     weights = {
-        'Q': np.diag([0.1, 0.1, 100, 1, 1, 10, 2500, 2500, 10000, 900, 900, 100]),
-        'R': np.diag([5, 5, 5, 5])  # Example: you might tune these as needed
+        'Q': np.diag([0.1, 0.1, 100, 1, 1, 10, 2500, 2500, 15000, 900, 900, 2000]),
+        'R': np.diag([1, 1, 1, 1])  # Example: you might tune these as needed
     }
     
     # Define input constraints (for each of the 4 inputs)
@@ -432,9 +432,9 @@ if __name__ == "__main__":
     state_bounds[6]  = (-0.5, 0.5)      # x position
     state_bounds[7]  = (-0.5, 0.5)      # y position
     state_bounds[8]  = (-0.01, 1.1*initial_altitude)  # altitude z
-    state_bounds[9]  = (-1, 1)          # x velocity
-    state_bounds[10] = (-1, 1)          # y velocity
-    state_bounds[11] = (-2, 0)          # vertical velocity
+    state_bounds[9]  = (-2, 2)          # x velocity
+    state_bounds[10] = (-2, 2)          # y velocity
+    state_bounds[11] = (-10, 1)          # vertical velocity
     
     # Create MPC controller with chosen horizon
     horizon = 15
@@ -453,13 +453,23 @@ if __name__ == "__main__":
     state_history, input_history, LandTime, RunTime = flight_simulation(initial_state, A_disc, B_disc, sample_time, num_steps, ref_traj, mpc, model)
     
     os.system("cls")
+    print("### Initial Conditions ###")
+    print("Target Landing Time: " + str(ideal_landing_time) + " seconds")
+    print("Starting Altitude: " + str(initial_altitude) + " m")
+    print("Starting X-Position: " + str(x_offset) + " m")
+    print("Starting Y-Position: " + str(y_offset) + " m\n")
 
+    
+    print("\n### MPC Controller Performance ###")
     print("Landing Time: " + str(LandTime/10) + " seconds")
+    print(f"Landing Time Error: {(abs((((LandTime/10)/ideal_landing_time)*100)-100)):.2f} %")
     print(f"Landing Velocity: {state_history[11,LandTime]:.2f} m/s")
     print(f"X-Position: {state_history[6,LandTime]:.2f} m")
     print(f"Y-Position: {state_history[7,LandTime]:.2f} m")
     print(f"Setup Run Time: {SetupTime:.2f} s")
     print(f"MPC Run Time: {RunTime:.2f} s")
+    print(f"Total Run Time: {(SetupTime + RunTime):.2f} s\n")
+
 
     # Plot some results (positions and altitude)
     plt.figure(figsize=(10,6))
