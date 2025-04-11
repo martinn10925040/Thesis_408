@@ -211,7 +211,7 @@ def create_mpc_controller(A_disc, B_disc, sample_time, horizon, weights, input_b
             ref_vec = ca.DM(ref_traj[:, idx].reshape(-1, 1))
             
             # Choose an alternative value based on time.
-            if t_pred < 5:
+            if t_pred < 4:
                 alt_value = ca.DM(ref_traj[8, idx].reshape(1, 1))
             else:
                 alt_value = ca.DM(0)
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     os.system("cls")
     
     # Simulation parameters
-    ideal_landing_time = 12
+    ideal_landing_time = 7
     total_sim_time = ideal_landing_time + 2
     sample_time = 0.1
     num_steps = int(total_sim_time / sample_time)
@@ -421,14 +421,19 @@ if __name__ == "__main__":
     # Example: thrust limits and torque limits (adjust according to your UAV parameters)
     input_bounds = [
         (-mass * gravity, 2.5 * mass * gravity),  # thrust (deltaT)
-        (-6.535, 6.535),                          # roll torque
-        (-6.535, 6.535),                          # pitch torque
+        (-6.5335, 6.5335),                          # roll torque
+        (-6.5335, 6.5335),                          # pitch torque
         (-0.36, 0.36)                             # yaw torque
     ]
     
     # Define state bounds for selected states (example bounds for states 7,8,9,10,11,12)
     # Here we set bounds for all 12 states (adjust as needed)
     state_bounds = [(-np.inf, np.inf)] * 12
+    state_bounds[0]  = (-0.5236, 0.5236)      # Roll Angle
+    state_bounds[1]  = (-0.5236, 0.5236)      # Pitch Angle
+    state_bounds[3]  = (-0.7854, 0.7854)      # Roll Rate
+    state_bounds[4]  = (-0.7854, 0.7854)      # Pitch Rate
+    state_bounds[5]  = (-1.5708, 1.5708)      # Yaw Rate
     state_bounds[6]  = (-0.5, 0.5)      # x position
     state_bounds[7]  = (-0.5, 0.5)      # y position
     state_bounds[8]  = (-0.01, 1.1*initial_altitude)  # altitude z
@@ -473,25 +478,25 @@ if __name__ == "__main__":
 
     # Plot some results (positions and altitude)
     plt.figure(figsize=(10,6))
-    plt.plot(time_vector, state_history[6, :], label='X Position')
-    plt.plot(time_vector, state_history[7, :], label='Y Position')
+    # plt.plot(time_vector, state_history[6, :], label='X Position')
+    # plt.plot(time_vector, state_history[7, :], label='Y Position')
     plt.plot(time_vector, state_history[8, :], label='Altitude')
     plt.xlabel("Time (s)")
     plt.ylabel("Distance (m)")
-    plt.title(f"UAV Flight Simulation - Target: {ideal_landing_time} seconds")
+    plt.title(f"UAV Altitude vs Time - Target: {ideal_landing_time} seconds")
     plt.legend()
     plt.grid(True)
     plt.show()
 
-        # Plot some results (positions and altitude)
+    # Plot some results (positions and altitude)
     plt.figure(figsize=(10,6))
     plt.plot(time_vector, state_history[11, :], label='Vertical Velocity')
     plt.xlabel("Time (s)")
     plt.ylabel("Velocity (m/s)")
-    plt.title(f"UAV Flight Simulation - Target: {ideal_landing_time} seconds")
+    plt.title(f"UAV Vertical Velocity - Target: {ideal_landing_time} seconds")
     plt.legend()
     plt.grid(True)
     plt.show()
     
-    animate_simulation(state_history, time_vector)
+    # animate_simulation(state_history, time_vector)
 
